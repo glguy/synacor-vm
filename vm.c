@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#define MEMSIZE 0x8000
+
 static void more_stack(size_t *sz, uint16_t **stack);
 static void vm(uint16_t *mem);
 static inline void output(char c);
@@ -11,7 +13,7 @@ static void load_program(const char *name, void *mem, size_t n);
 static void more_stack(size_t *sz, uint16_t **stack) {
   *sz *= 2;
   *stack = realloc(*stack, (*sz) * sizeof(uint16_t));
-  if (!*stack) abort();
+  if (!*stack) exit(EXIT_FAILURE);
 }
 
 static inline void output(char c) {
@@ -43,37 +45,39 @@ static void load_program(const char *name, void *mem, size_t n) {
 
 int main(int argc, char *argv[]) {
 
-  uint16_t mem[0x8008] = {0};
+  uint16_t mem[MEMSIZE];
 
   if (argc < 2) {
     fprintf(stderr, "Usage: %s challenge.bin\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
-  load_program(argv[1], &mem, 0x8000 * sizeof(uint16_t));
+  load_program(argv[1], &mem, sizeof(mem));
   vm(mem);
   return 0;
 }
 
 static void vm(uint16_t *mem) {
 
-  size_t pc            = 0;
-  size_t stack_size    = 0x8000;
-  uint16_t *stack      = malloc(stack_size * sizeof(uint16_t));
-  uint16_t *sp         = stack;
+  size_t pc          = 0;
+  size_t stack_size  = 0x8000; /* initial guess */
+  uint16_t *stack    = malloc(stack_size * sizeof(uint16_t));
+  uint16_t *sp       = stack;
+  uint16_t reg[8]    = {0};
 
-  #define AR (mem[mem[pc+1]])
-  #define R(x) ((mem[pc+x] & 0x8000) ? mem[mem[pc+x]] : mem[pc+x])
+  #define AR (reg[mem[pc+1] & 0x7])
+  #define R(x) ((mem[pc+x] & MEMSIZE) ? reg[mem[pc+x] & 0x7] : mem[pc+x])
   #define A R(1)
   #define B R(2)
   #define C R(3)
 
   static void *dispatch_table[] = {
-    &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT, &&JMP, &&JT,
-    &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR, &&NOT, &&RMEM,
-    &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP
+    &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
+    &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
+    &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
+    &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
   };
-  #define DISPATCH() goto *dispatch_table[mem[pc]]
+  #define DISPATCH() goto *dispatch_table[mem[pc] & 0x1f]
 
   DISPATCH();
 
@@ -96,11 +100,12 @@ static void vm(uint16_t *mem) {
   NOOP:                         pc += 1;                DISPATCH();
   PUSH: if (sp == stack + stack_size) more_stack(&stack_size, &stack);
         *sp++ = A;              pc += 2;                DISPATCH();
-  POP:  if (sp == stack) abort();
+  POP:  if (sp == stack) exit(EXIT_FAILURE);
         AR = *--sp;             pc += 2;                DISPATCH();
   CALL: if (sp == stack + stack_size) more_stack(&stack_size, &stack);
         *sp++ = pc+2;           pc = A;                 DISPATCH();
   RET:  if (sp == stack) goto HALT;
                                 pc = *--sp;             DISPATCH();
   HALT: free(stack);                                    return;
+  BAD:  exit(EXIT_FAILURE);
 }

@@ -6,7 +6,7 @@ run: vm
 	./vm challenge.bin
 
 vm: vm.c
-	clang -g -O3 $^ -o $@
+	clang -O3 $^ -o $@
 
 clean:
 	rm vm
