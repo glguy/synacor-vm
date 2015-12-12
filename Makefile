@@ -1,12 +1,18 @@
-.PHONY: all clean run
+.PHONY: all clean run coins vault
 
-all: vm
+all: vm teleporter
 
 run: vm
 	./vm challenge.bin
 
 vm: vm.c
-	clang -O3 $^ -o $@
+	clang -g -O3 $^ -o $@
+teleporter: teleporter.c
+	clang -g -O3 $^ -o $@
+coins:
+	runghc Coins.hs
+vault:
+	runghc Vault.hs
 
 clean:
-	rm vm
+	rm vm teleporter

@@ -48,9 +48,9 @@ use corroded coin
 north
 take teleporter
 !setreg 7 6486
-!setreg 156d 6
-!setreg 1571 15
-!setreg 1572 15
+!setmem 156d 6
+!setmem 1571 15
+!setmem 1572 15
 use teleporter
 west
 north
