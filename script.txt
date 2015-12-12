@@ -47,11 +47,10 @@ use concave coin
 use corroded coin
 north
 take teleporter
-!setreg 7 1
-!setmem 179d 6 # tail calls
-!setmem 17b1 6 # tail calls
-!setmem 156d 1
-!setmem 1570 4
+!setreg 7 6486
+!setreg 156d 6
+!setreg 1571 15
+!setreg 1572 15
 use teleporter
 west
 north
