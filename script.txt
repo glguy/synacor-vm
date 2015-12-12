@@ -47,3 +47,38 @@ use concave coin
 use corroded coin
 north
 take teleporter
+!setreg 7 1
+!setmem 179d 6 # tail calls
+!setmem 17b1 6 # tail calls
+!setmem 156d 1
+!setmem 1570 4
+use teleporter
+west
+north
+north
+north
+north
+north
+north
+north
+east
+take journal
+west
+north
+north
+take orb
+north
+east
+east
+north
+west
+south
+east
+east
+west
+north
+north
+east
+vault
+take mirror
+use mirror
