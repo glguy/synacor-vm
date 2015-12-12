@@ -13,7 +13,7 @@ static int input(void);
 static inline void output(char c);
 static void load_program(const char *name, void *mem, size_t n);
 static void render_mem(char *out, size_t n, uint16_t addr);
-static void trace(size_t pc);
+static void trace(void);
 
 static uint16_t pc;
 static uint16_t reg[8];
@@ -132,7 +132,7 @@ static void render_mem(char *out, size_t n, uint16_t addr) {
   out[n-1] = '\0';
 }
 
-static void trace(size_t pc) {
+static void trace(void) {
 
   /* a jump table is unnecessary here, but I had one laying around... */
   static void *dispatch_table[] = {
@@ -148,33 +148,33 @@ static void trace(size_t pc) {
   render_mem(c,sizeof(c),pc+3);
 
   goto *dispatch_table[mem[pc] & 0x1f];
-  SET:  printf("%04zx: %s = %s\n",       pc, a, b   ); return;
-  EQ:   printf("%04zx: %s = %s == %s\n", pc, a, b, c); return;
-  GT:   printf("%04zx: %s = %s > %s\n",  pc, a, b, c); return;
-  ADD:  printf("%04zx: %s = %s + %s\n",  pc, a, b, c); return;
-  MULT: printf("%04zx: %s = %s * %s\n",  pc, a, b, c); return;
-  MOD:  printf("%04zx: %s = %s %% %s\n", pc, a, b, c); return;
-  AND:  printf("%04zx: %s = %s & %s\n",  pc, a, b, c); return;
-  OR:   printf("%04zx: %s = %s | %s\n",  pc, a, b, c); return;
-  NOT:  printf("%04zx: %s = ~%s\n",      pc, a, b   ); return;
-  RMEM: printf("%04zx: %s = mem[%s]\n",  pc, a, b   ); return;
-  WMEM: printf("%04zx: mem[%s] = %s\n",  pc, a, b   ); return;
+  SET:  printf("%04hx: %s = %s\n",       pc, a, b   ); return;
+  EQ:   printf("%04hx: %s = %s == %s\n", pc, a, b, c); return;
+  GT:   printf("%04hx: %s = %s > %s\n",  pc, a, b, c); return;
+  ADD:  printf("%04hx: %s = %s + %s\n",  pc, a, b, c); return;
+  MULT: printf("%04hx: %s = %s * %s\n",  pc, a, b, c); return;
+  MOD:  printf("%04hx: %s = %s %% %s\n", pc, a, b, c); return;
+  AND:  printf("%04hx: %s = %s & %s\n",  pc, a, b, c); return;
+  OR:   printf("%04hx: %s = %s | %s\n",  pc, a, b, c); return;
+  NOT:  printf("%04hx: %s = ~%s\n",      pc, a, b   ); return;
+  RMEM: printf("%04hx: %s = mem[%s]\n",  pc, a, b   ); return;
+  WMEM: printf("%04hx: mem[%s] = %s\n",  pc, a, b   ); return;
 
-  JMP:  printf("%04zx: JMP %s\n",        pc, a      ); return;
-  JT:   printf("%04zx: JT [%s] %s\n",    pc, a, b   ); return;
-  JF:   printf("%04zx: JF [%s] %s\n",    pc, a, b   ); return;
+  JMP:  printf("%04hx: JMP %s\n",        pc, a      ); return;
+  JT:   printf("%04hx: JT [%s] %s\n",    pc, a, b   ); return;
+  JF:   printf("%04hx: JF [%s] %s\n",    pc, a, b   ); return;
 
-  OUT:  printf("%04zx: OUTPUT %s\n",     pc, a      ); return;
-  IN:   printf("%04zx: INPUT %s\n",      pc, a      ); return;
+  OUT:  printf("%04hx: OUTPUT %s\n",     pc, a      ); return;
+  IN:   printf("%04hx: INPUT %s\n",      pc, a      ); return;
 
-  NOOP: printf("%04zx: NOP\n",           pc         ); return;
-  PUSH: printf("%04zx: PUSH %s\n",       pc, a      ); return;
-  POP:  printf("%04zx: POP %s\n",        pc, a      ); return;
-  CALL: printf("%04zx: CALL %s\n",       pc, a      ); return;
-  RET:  printf("%04zx: RET\n",           pc         ); return;
+  NOOP: printf("%04hx: NOP\n",           pc         ); return;
+  PUSH: printf("%04hx: PUSH %s\n",       pc, a      ); return;
+  POP:  printf("%04hx: POP %s\n",        pc, a      ); return;
+  CALL: printf("%04hx: CALL %s\n",       pc, a      ); return;
+  RET:  printf("%04hx: RET\n",           pc         ); return;
 
-  HALT: printf("%04zx: HALT\n",          pc         ); return;
-  BAD:  printf("%04zx: BAD\n",           pc         ); return;
+  HALT: printf("%04hx: HALT\n",          pc         ); return;
+  BAD:  printf("%04hx: BAD\n",           pc         ); return;
 }
 
 static void load_program(const char *name, void *mem, size_t n) {
@@ -211,6 +211,14 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+/* Look up value indicated by opcode argument.
+ * Values beyond the address space indicate register names */
+static inline uint16_t arg(int x) {
+  return mem[pc+x] & MEMSIZE
+       ? reg[mem[pc+x] & 0x7]
+       : mem[pc+x];
+}
+
 static void vm(void) {
 
   pc         = 0;
@@ -219,10 +227,9 @@ static void vm(void) {
   sp         = stack;
 
   #define AR (reg[mem[pc+1] & 0x7])
-  #define R(x) ((mem[pc+x] & MEMSIZE) ? reg[mem[pc+x] & 0x7] : mem[pc+x])
-  #define A R(1)
-  #define B R(2)
-  #define C R(3)
+  #define A arg(1)
+  #define B arg(2)
+  #define C arg(3)
 
   static void *dispatch_table[] = {
     &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
@@ -232,7 +239,7 @@ static void vm(void) {
   };
 
   #define DISPATCH() \
-    do { if (tracing) trace(pc); \
+    do { if (tracing) trace(); \
          goto *dispatch_table[mem[pc] & 0x1f]; \
        } while(false)
 
@@ -244,8 +251,8 @@ static void vm(void) {
   JMP:                          pc = A;                 DISPATCH();
   JT:                           pc = A  ? B : pc+3;     DISPATCH();
   JF:                           pc = !A ? B : pc+3;     DISPATCH();
-  ADD:  AR = (B + C) % 0x8000;  pc += 4;                DISPATCH();
-  MULT: AR = (B * C) % 0x8000;  pc += 4;                DISPATCH();
+  ADD:  AR = (B + C) & 0x7fff;  pc += 4;                DISPATCH();
+  MULT: AR = (B * C) & 0x7fff;  pc += 4;                DISPATCH();
   MOD:  AR = B % C;             pc += 4;                DISPATCH();
   AND:  AR = B & C;             pc += 4;                DISPATCH();
   OR:   AR = B | C;             pc += 4;                DISPATCH();
