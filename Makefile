@@ -7,7 +7,7 @@ run: vm
 
 vm: vm.c
 	clang -g -O3 $^ -o $@
-teleporter: teleporter.c
+teleport: teleport.c
 	clang -g -O3 $^ -o $@
 coins:
 	runghc Coins.hs
@@ -15,4 +15,4 @@ vault:
 	runghc Vault.hs
 
 clean:
-	rm vm teleporter
+	rm vm teleport
