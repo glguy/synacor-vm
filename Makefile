@@ -1,6 +1,6 @@
 .PHONY: all clean run coins vault
 
-all: vm teleporter
+all: vm teleport
 
 run: vm
 	./vm challenge.bin
