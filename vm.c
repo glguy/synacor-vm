@@ -7,7 +7,7 @@
 
 #define MEMSIZE 0x8000
 
-static void check_stack(void);
+static void push(uint16_t);
 static void vm(void);
 static int input(void);
 static inline void output(char c);
@@ -21,14 +21,19 @@ static size_t   stack_size;
 static uint16_t *stack;
 static uint16_t *sp;
 static bool     tracing;
-static uint16_t mem[MEMSIZE+3]; /* 3 overflow in case pc gets to end */
+static uint16_t mem[MEMSIZE];
 
-static void check_stack(void) {
+/* Push the argument onto the stack. This function
+ * reallocates the stack to be twice as big in the case
+ * that the stack was full. When reallocation fails the
+ * program will terminate with failure. */
+static void push(uint16_t x) {
   if (sp == stack + stack_size) {
     stack_size *= 2;
     stack = realloc(stack, stack_size * sizeof(uint16_t));
     if (!stack) exit(EXIT_FAILURE);
   }
+  *sp++ = x;
 }
 
 static inline void output(char c) {
@@ -46,24 +51,23 @@ static void console(void) {
   char *cmd = strsep(&line, " \n");
 
   if (!strcmp(cmd,"setreg")) {
-    size_t r;
+    char c;
     uint16_t val;
-    int count = sscanf(line, "%zx%hx", &r, &val);
+    int count = sscanf(line, "%c%hx", &c, &val);
+    int r = c - 'A';
     if (count == 2 && r < 8) {
       reg[r] = val;
-      printf("### Register %zx set to %04hx\n", r, val);
+      printf("### Register %c set to %04hx\n", c, val);
     } else {
-      printf("### Error: setreg <reg> <val>\n");
+      printf("### Error: setreg <A-H> <val>\n");
     }
 
   } else if (!strcmp(cmd,"getreg")) {
-    size_t r;
-    int count = sscanf(line, "%zx", &r);
-    if (count == 1 && r < 8) {
-      printf("### Register %zx is %04hx\n", r, reg[r]);
-    } else {
-      printf("### Error: getreg <reg>\n");
+    printf("###");
+    for (int r = 0; r < 8; r++) {
+      printf("  %c:%04hx", 'A'+r, reg[r]);
     }
+    printf("\n");
 
   } else if (!strcmp(cmd,"setmem")) {
     size_t r;
@@ -240,7 +244,7 @@ static void vm(void) {
 
   #define DISPATCH() \
     do { if (tracing) trace(); \
-         goto *dispatch_table[mem[pc] & 0x1f]; \
+         goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
        } while(false)
 
   DISPATCH();
@@ -262,14 +266,11 @@ static void vm(void) {
   OUT:  output(A);              pc += 2;                DISPATCH();
   IN:   AR = input();           pc += 2;                DISPATCH();
   NOOP:                         pc += 1;                DISPATCH();
-  PUSH: check_stack();
-        *sp++ = A;              pc += 2;                DISPATCH();
+  PUSH: push(A);                pc += 2;                DISPATCH();
   POP:  if (sp == stack) exit(EXIT_FAILURE);
         AR = *--sp;             pc += 2;                DISPATCH();
-  CALL: check_stack();
-        *sp++ = pc+2;           pc = A;                 DISPATCH();
-  RET:  if (sp == stack) goto HALT;
-                                pc = *--sp;             DISPATCH();
+  CALL: push(pc+2);             pc = A;                 DISPATCH();
+  RET:  if (sp == stack) goto HALT; pc = *--sp;         DISPATCH();
   HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
   BAD:  exit(EXIT_FAILURE);
 }

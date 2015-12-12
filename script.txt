@@ -47,7 +47,7 @@ use concave coin
 use corroded coin
 north
 take teleporter
-!setreg 7 6486
+!setreg H 6486
 !setmem 156d 6
 !setmem 1571 15
 !setmem 1572 15
