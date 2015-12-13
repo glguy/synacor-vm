@@ -28,251 +28,293 @@ static uint16_t mem[MEMSIZE];
  * that the stack was full. When reallocation fails the
  * program will terminate with failure. */
 static void push(uint16_t x) {
-  if (__builtin_expect(sp == stack + stack_size,false)) {
-    stack_size *= 2;
-    stack = realloc(stack, stack_size * sizeof(uint16_t));
-    if (!stack) exit(EXIT_FAILURE);
-  }
-  *sp++ = x;
+    if (__builtin_expect(sp == stack + stack_size,false)) {
+        stack_size *= 2;
+        stack = realloc(stack, stack_size * sizeof(uint16_t));
+        if (!stack) exit(EXIT_FAILURE);
+    }
+    *sp++ = x;
 }
 
 static inline void output(char c) {
-  if (!tracing) {
-    putchar(c);
-    if (c == '\n') fflush(stdout);
-  }
+    if (!tracing) {
+        putchar(c);
+        if (c == '\n') fflush(stdout);
+    }
 }
 
-static void console(void) {
-  char *line = NULL;
-  size_t linecap = 0;
-  ssize_t linelen = getline(&line, &linecap, stdin);
-  if (linelen == -1) exit(EXIT_FAILURE);
+static void console_setreg(char *args) {
 
-  char *cmd = strsep(&line, " \n");
-
-  if (!strcmp(cmd,"setreg")) {
     char c;
     uint16_t val;
-    int count = sscanf(line, "%c%hx", &c, &val);
+    int count = sscanf(args, "%c%hx", &c, &val);
     int r = c - 'A';
-    if (count == 2 && r < 8) {
-      reg[r] = val;
-      printf("### Register %c set to %04hx\n", c, val);
-    } else {
-      printf("### Error: setreg <A-H> <val>\n");
-    }
 
-  } else if (!strcmp(cmd,"getreg")) {
+    if (count == 2 && r < 8) {
+        reg[r] = val;
+        printf("### Register %c set to %04hx\n", c, val);
+    } else {
+        printf("### Error: setreg <A-H> <val>\n");
+    }
+}
+
+static void console_getreg(char *args) {
     printf("###");
     for (int r = 0; r < 8; r++) {
-      printf("  %c:%04hx", 'A'+r, reg[r]);
+        printf("  %c:%04hx", 'A'+r, reg[r]);
     }
     printf("\n");
+}
 
-  } else if (!strcmp(cmd,"setmem")) {
-    size_t r;
-    uint16_t val;
-    int count = sscanf(line, "%zx%hx", &r, &val);
+static void console_setmem(char *args) {
+
+    uint16_t r, val;
+    int count = sscanf(args, "%hx%hx", &r, &val);
+
     if (count == 2 && r < MEMSIZE) {
-      mem[r] = val;
-      printf("### Memory %04zx set to %04hx\n", r, val);
+        mem[r] = val;
+        printf("### Memory %04hx set to %04hx\n", r, val);
     } else {
-      printf("### Error: setmem <addr> <val>\n");
+        printf("### Error: setmem <addr> <val>\n");
     }
+}
 
-  } else if (!strcmp(cmd,"getmem")) {
-    size_t r;
-    int count = sscanf(line, "%zx", &r);
+static void console_getmem(char *args) {
+
+    uint16_t r;
+    int count = sscanf(args, "%hx", &r);
+
     if (count == 1 && r < MEMSIZE) {
-      printf("### Memory %04zx is %04hx\n", r, mem[r]);
+        printf("### Memory %04hx is %04hx\n", r, mem[r]);
     } else {
-      printf("### Error: getmem <addr>\n");
+        printf("### Error: getmem <addr>\n");
     }
+}
 
-  } else if (!strcmp(cmd,"traceon")) {
-    tracing = true;
-    printf("### Tracing enabled\n");
+static void console_trace(char *args) {
 
-  } else if (!strcmp(cmd,"traceoff")) {
-    tracing = false;
-    printf("### Tracing disabled\n");
+    char * mode = strsep(&args," \n");
 
-  } else if (!strcmp(cmd,"dumpmem")) {
-    char * file = line;
-    file = strsep(&file," \n");
-    int fd = open(file, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+    if (!strcmp(mode, "on")) {
+        printf("### Tracing enabled\n");
+        tracing = true;
+    } else if (!strcmp(mode, "off")) {
+        printf("### Tracing disabled\n");
+        tracing = false;
+    } else {
+        printf("### !trace (on|off)\n");
+    }
+}
+
+static void console_dumpmem(char *args) {
+
+    char *filename = strsep(&args," \n");
+    int fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+
     if (fd == -1) {
       perror("### open");
     } else {
       write(fd, mem, sizeof(mem));
       close(fd);
-      printf("### Memory dumped to %s\n", line);
+      printf("### Memory dumped to %s\n", args);
+    }
+}
+
+struct console_cmd {
+    const char *name;
+    void (*run)(char *);
+};
+
+static void console(void) {
+
+    char *line = NULL;
+    size_t linecap = 0;
+    ssize_t linelen = getline(&line, &linecap, stdin);
+    if (linelen == -1) exit(EXIT_FAILURE);
+
+    char *cmd = strsep(&line, " \n");
+
+    static struct console_cmd cmds[] =
+       { { "setreg" , console_setreg  }
+       , { "getreg" , console_getreg  }
+       , { "setmem" , console_setmem  }
+       , { "getmem" , console_getmem  }
+       , { "trace"  , console_trace   }
+       , { "dumpmem", console_dumpmem }
+       , { NULL     , NULL            }
+       };
+
+    int i;
+    for (i = 0; cmds[i].name; i++) {
+      if (!strcmp(cmd, cmds[i].name)) {
+        cmds[i].run(line);
+        break;
+      }
     }
 
-  } else {
-    printf("### Bad console command `%s`\n", cmd);
-  }
+    if (!cmds[i].name) {
+      printf("### Bad console command `%s`\n", cmd);
+    }
 
-  free(cmd);
+    free(cmd);
 }
 
 static int input(void) {
-  char c = getchar();
-  if (c == EOF) exit(EXIT_SUCCESS);
-
-  if (c == '!') {
-    console();
-    return input();
-  }
-
-  return c;
+    char c = getchar();
+    switch (c) {
+        case EOF:            exit(EXIT_SUCCESS);
+        case '!': console(); return input();
+        case '#':            return input();
+        default:             return c;
+    }
 }
 
 static void render_mem(char *out, size_t n, uint16_t addr) {
-  if (mem[addr] & MEMSIZE)
-    snprintf(out, n, "%c", 'A'+(mem[addr]&7));
-  else
-    snprintf(out, n, "%04hx", mem[addr]);
-  out[n-1] = '\0';
+    uint16_t val = mem[addr % MEMSIZE];
+    if (val & MEMSIZE) {
+        snprintf(out, n, "%c", 'A'+ val&7);
+    } else {
+        snprintf(out, n, "%04hx", val);
+    }
+    out[n-1] = '\0';
 }
 
 static void trace_op(void) {
 
-  /* a jump table is unnecessary here, but I had one laying around... */
-  static void *dispatch_table[] = {
-    &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
-    &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
-    &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
-    &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
-  };
+    /* a jump table is unnecessary here, but I had one laying around... */
+    static void *dispatch_table[] = {
+        &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
+        &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
+        &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
+        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
+    };
 
-  char a[7], b[7], c[7];
-  render_mem(a,sizeof(a),pc+1);
-  render_mem(b,sizeof(b),pc+2);
-  render_mem(c,sizeof(c),pc+3);
+    char a[7], b[7], c[7];
+    render_mem(a,sizeof(a),pc+1);
+    render_mem(b,sizeof(b),pc+2);
+    render_mem(c,sizeof(c),pc+3);
 
-  goto *dispatch_table[mem[pc] & 0x1f];
-  SET:  printf("%04hx: %s = %s\n",       pc, a, b   ); return;
-  EQ:   printf("%04hx: %s = %s == %s\n", pc, a, b, c); return;
-  GT:   printf("%04hx: %s = %s > %s\n",  pc, a, b, c); return;
-  ADD:  printf("%04hx: %s = %s + %s\n",  pc, a, b, c); return;
-  MULT: printf("%04hx: %s = %s * %s\n",  pc, a, b, c); return;
-  MOD:  printf("%04hx: %s = %s %% %s\n", pc, a, b, c); return;
-  AND:  printf("%04hx: %s = %s & %s\n",  pc, a, b, c); return;
-  OR:   printf("%04hx: %s = %s | %s\n",  pc, a, b, c); return;
-  NOT:  printf("%04hx: %s = ~%s\n",      pc, a, b   ); return;
-  RMEM: printf("%04hx: %s = mem[%s]\n",  pc, a, b   ); return;
-  WMEM: printf("%04hx: mem[%s] = %s\n",  pc, a, b   ); return;
+    goto *dispatch_table[mem[pc] & 0x1f];
+    SET:  printf("%04hx: %s = %s\n",       pc, a, b   ); return;
+    EQ:   printf("%04hx: %s = %s == %s\n", pc, a, b, c); return;
+    GT:   printf("%04hx: %s = %s > %s\n",  pc, a, b, c); return;
+    ADD:  printf("%04hx: %s = %s + %s\n",  pc, a, b, c); return;
+    MULT: printf("%04hx: %s = %s * %s\n",  pc, a, b, c); return;
+    MOD:  printf("%04hx: %s = %s %% %s\n", pc, a, b, c); return;
+    AND:  printf("%04hx: %s = %s & %s\n",  pc, a, b, c); return;
+    OR:   printf("%04hx: %s = %s | %s\n",  pc, a, b, c); return;
+    NOT:  printf("%04hx: %s = ~%s\n",      pc, a, b   ); return;
+    RMEM: printf("%04hx: %s = mem[%s]\n",  pc, a, b   ); return;
+    WMEM: printf("%04hx: mem[%s] = %s\n",  pc, a, b   ); return;
 
-  JMP:  printf("%04hx: JMP %s\n",        pc, a      ); return;
-  JT:   printf("%04hx: JT [%s] %s\n",    pc, a, b   ); return;
-  JF:   printf("%04hx: JF [%s] %s\n",    pc, a, b   ); return;
+    JMP:  printf("%04hx: JMP %s\n",        pc, a      ); return;
+    JT:   printf("%04hx: JT [%s] %s\n",    pc, a, b   ); return;
+    JF:   printf("%04hx: JF [%s] %s\n",    pc, a, b   ); return;
 
-  OUT:  printf("%04hx: OUTPUT %s\n",     pc, a      ); return;
-  IN:   printf("%04hx: INPUT %s\n",      pc, a      ); return;
+    OUT:  printf("%04hx: OUTPUT %s\n",     pc, a      ); return;
+    IN:   printf("%04hx: INPUT %s\n",      pc, a      ); return;
 
-  NOOP: printf("%04hx: NOP\n",           pc         ); return;
-  PUSH: printf("%04hx: PUSH %s\n",       pc, a      ); return;
-  POP:  printf("%04hx: POP %s\n",        pc, a      ); return;
-  CALL: printf("%04hx: CALL %s\n",       pc, a      ); return;
-  RET:  printf("%04hx: RET\n",           pc         ); return;
+    NOOP: printf("%04hx: NOP\n",           pc         ); return;
+    PUSH: printf("%04hx: PUSH %s\n",       pc, a      ); return;
+    POP:  printf("%04hx: POP %s\n",        pc, a      ); return;
+    CALL: printf("%04hx: CALL %s\n",       pc, a      ); return;
+    RET:  printf("%04hx: RET\n",           pc         ); return;
 
-  HALT: printf("%04hx: HALT\n",          pc         ); return;
-  BAD:  printf("%04hx: BAD\n",           pc         ); return;
+    HALT: printf("%04hx: HALT\n",          pc         ); return;
+    BAD:  printf("%04hx: BAD\n",           pc         ); return;
 }
 
 static void load_program(const char *name, void *mem, size_t n) {
 
-  int pgm = open(name, O_RDONLY);
-  if (pgm == -1) {
-    perror("open");
-    exit(EXIT_FAILURE);
-  }
+    int pgm = open(name, O_RDONLY);
+    if (pgm == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
 
-  ssize_t sz;
-  while ( (sz = read(pgm, mem, n)) > 0 ) {
-    mem += sz;
-    n   -= sz;
-  }
+    ssize_t sz;
+    while ( (sz = read(pgm, mem, n)) > 0 ) {
+        mem += sz;
+        n   -= sz;
+    }
 
-  if (sz == -1) {
-    perror("read");
-    exit(EXIT_FAILURE);
-  }
+    if (sz == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
 
-  close(pgm);
+    close(pgm);
 }
 
 int main(int argc, char *argv[]) {
 
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s challenge.bin\n", argv[0]);
-    exit(EXIT_FAILURE);
-  }
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s challenge.bin\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
 
-  load_program(argv[1], &mem, sizeof(mem));
-  vm();
-  return 0;
+    load_program(argv[1], &mem, sizeof(mem));
+    vm();
+
+    return 0;
 }
 
 /* Look up value indicated by opcode argument.
  * Values beyond the address space indicate register names */
 static inline uint16_t arg(int x) {
-  return mem[pc+x] & MEMSIZE
-       ? reg[mem[pc+x] & 0x7]
-       : mem[pc+x];
+    const uint16_t v = mem[(pc+x) % MEMSIZE];
+    return v & MEMSIZE ? reg[v & 0x7] : v;
 }
 
 static void vm(void) {
 
-  pc         = 0;
-  stack_size = 0x8000; /* initial guess */
-  stack      = malloc(stack_size * sizeof(uint16_t));
-  sp         = stack;
+    pc         = 0;
+    stack_size = 0x8000; /* initial guess */
+    stack      = malloc(stack_size * sizeof(uint16_t));
+    sp         = stack;
 
-  #define AR (reg[mem[pc+1] & 0x7])
-  #define A arg(1)
-  #define B arg(2)
-  #define C arg(3)
+    #define AR (reg[mem[pc+1] & 0x7])
+    #define A arg(1)
+    #define B arg(2)
+    #define C arg(3)
 
-  static void *dispatch_table[] = {
-    &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
-    &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
-    &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
-    &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
-  };
+    static void *dispatch_table[] = {
+        &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
+        &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
+        &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
+        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
+    };
 
-  #define DISPATCH() \
-    do { if (__builtin_expect(tracing,false)) trace_op(); \
-         goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
-       } while(false)
+    #define DISPATCH() \
+      do { if (__builtin_expect(tracing,false)) trace_op(); \
+           goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
+         } while(false)
 
-  DISPATCH();
+    DISPATCH();
 
-  SET:  AR = B;                 pc += 3;                DISPATCH();
-  EQ:   AR = B == C;            pc += 4;                DISPATCH();
-  GT:   AR = B > C;             pc += 4;                DISPATCH();
-  JMP:                          pc = A;                 DISPATCH();
-  JT:                           pc = A  ? B : pc+3;     DISPATCH();
-  JF:                           pc = !A ? B : pc+3;     DISPATCH();
-  ADD:  AR = (B + C) & 0x7fff;  pc += 4;                DISPATCH();
-  MULT: AR = (B * C) & 0x7fff;  pc += 4;                DISPATCH();
-  MOD:  AR = B % C;             pc += 4;                DISPATCH();
-  AND:  AR = B & C;             pc += 4;                DISPATCH();
-  OR:   AR = B | C;             pc += 4;                DISPATCH();
-  NOT:  AR = B ^ 0x7fff;        pc += 3;                DISPATCH();
-  RMEM: AR = mem[B];            pc += 3;                DISPATCH();
-  WMEM: mem[A] = B;             pc += 3;                DISPATCH();
-  OUT:  output(A);              pc += 2;                DISPATCH();
-  IN:   AR = input();           pc += 2;                DISPATCH();
-  NOOP:                         pc += 1;                DISPATCH();
-  PUSH: push(A);                pc += 2;                DISPATCH();
-  POP:  if (__builtin_expect(sp == stack,false)) exit(EXIT_FAILURE);
-        AR = *--sp;             pc += 2;                DISPATCH();
-  CALL: push(pc+2);             pc = A;                 DISPATCH();
-  RET:  if (__builtin_expect(sp == stack,false)) goto HALT;
-                                pc = *--sp;             DISPATCH();
-  HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
-  BAD:  exit(EXIT_FAILURE);
+    SET:  AR = B;                 pc += 3;                DISPATCH();
+    EQ:   AR = B == C;            pc += 4;                DISPATCH();
+    GT:   AR = B > C;             pc += 4;                DISPATCH();
+    JMP:                          pc = A;                 DISPATCH();
+    JT:                           pc = A  ? B : pc+3;     DISPATCH();
+    JF:                           pc = !A ? B : pc+3;     DISPATCH();
+    ADD:  AR = (B + C) & 0x7fff;  pc += 4;                DISPATCH();
+    MULT: AR = (B * C) & 0x7fff;  pc += 4;                DISPATCH();
+    MOD:  AR = B % C;             pc += 4;                DISPATCH();
+    AND:  AR = B & C;             pc += 4;                DISPATCH();
+    OR:   AR = B | C;             pc += 4;                DISPATCH();
+    NOT:  AR = B ^ 0x7fff;        pc += 3;                DISPATCH();
+    RMEM: AR = mem[B];            pc += 3;                DISPATCH();
+    WMEM: mem[A] = B;             pc += 3;                DISPATCH();
+    OUT:  output(A);              pc += 2;                DISPATCH();
+    IN:   AR = input();           pc += 2;                DISPATCH();
+    NOOP:                         pc += 1;                DISPATCH();
+    PUSH: push(A);                pc += 2;                DISPATCH();
+    POP:  if (__builtin_expect(sp == stack,false)) exit(EXIT_FAILURE);
+          AR = *--sp;             pc += 2;                DISPATCH();
+    CALL: push(pc+2);             pc = A;                 DISPATCH();
+    RET:  if (__builtin_expect(sp == stack,false)) goto HALT;
+                                  pc = *--sp;             DISPATCH();
+    HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
+    BAD:  exit(EXIT_FAILURE);
 }
