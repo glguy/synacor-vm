@@ -13,7 +13,7 @@ static int input(void);
 static inline void output(char c);
 static void load_program(const char *name, void *mem, size_t n);
 static void render_mem(char *out, size_t n, uint16_t addr);
-static void trace(void);
+static void trace_op(void);
 
 static uint16_t pc;
 static uint16_t reg[8];
@@ -28,7 +28,7 @@ static uint16_t mem[MEMSIZE];
  * that the stack was full. When reallocation fails the
  * program will terminate with failure. */
 static void push(uint16_t x) {
-  if (sp == stack + stack_size) {
+  if (__builtin_expect(sp == stack + stack_size,false)) {
     stack_size *= 2;
     stack = realloc(stack, stack_size * sizeof(uint16_t));
     if (!stack) exit(EXIT_FAILURE);
@@ -47,6 +47,7 @@ static void console(void) {
   char *line = NULL;
   size_t linecap = 0;
   ssize_t linelen = getline(&line, &linecap, stdin);
+  if (linelen == -1) exit(EXIT_FAILURE);
 
   char *cmd = strsep(&line, " \n");
 
@@ -136,7 +137,7 @@ static void render_mem(char *out, size_t n, uint16_t addr) {
   out[n-1] = '\0';
 }
 
-static void trace(void) {
+static void trace_op(void) {
 
   /* a jump table is unnecessary here, but I had one laying around... */
   static void *dispatch_table[] = {
@@ -243,7 +244,7 @@ static void vm(void) {
   };
 
   #define DISPATCH() \
-    do { if (tracing) trace(); \
+    do { if (__builtin_expect(tracing,false)) trace_op(); \
          goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
        } while(false)
 
@@ -267,10 +268,11 @@ static void vm(void) {
   IN:   AR = input();           pc += 2;                DISPATCH();
   NOOP:                         pc += 1;                DISPATCH();
   PUSH: push(A);                pc += 2;                DISPATCH();
-  POP:  if (sp == stack) exit(EXIT_FAILURE);
+  POP:  if (__builtin_expect(sp == stack,false)) exit(EXIT_FAILURE);
         AR = *--sp;             pc += 2;                DISPATCH();
   CALL: push(pc+2);             pc = A;                 DISPATCH();
-  RET:  if (sp == stack) goto HALT; pc = *--sp;         DISPATCH();
+  RET:  if (__builtin_expect(sp == stack,false)) goto HALT;
+                                pc = *--sp;             DISPATCH();
   HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
   BAD:  exit(EXIT_FAILURE);
 }
