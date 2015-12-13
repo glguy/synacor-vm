@@ -1,0 +1,54 @@
+take tablet
+doorway
+north
+north
+bridge
+continue
+down
+east
+take empty lantern
+west
+west
+passage
+ladder
+west
+south
+north
+take can
+use can
+use lantern
+west
+ladder
+darkness
+continue
+west
+west
+west
+west
+north
+take red coin
+north
+east
+take concave coin
+down
+take corroded coin
+up
+west
+west
+take blue coin
+up
+take shiny coin
+down
+east
+use blue coin
+use red coin
+use shiny coin
+use concave coin
+use corroded coin
+north
+take teleporter
+!setreg H 1
+!setmem 1573 0
+#setmem 179d 6 # optional tail call optimization in ackermann
+#setmem 17b1 6 # optional tail call optimization in ackermann
+use teleporter
