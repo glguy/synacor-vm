@@ -127,6 +127,16 @@ struct console_cmd {
     void (*run)(char *);
 };
 
+static struct console_cmd cmds[] =
+    { { "setreg" , console_setreg  }
+    , { "getreg" , console_getreg  }
+    , { "setmem" , console_setmem  }
+    , { "getmem" , console_getmem  }
+    , { "trace"  , console_trace   }
+    , { "dumpmem", console_dumpmem }
+    , { NULL     , NULL            }
+    };
+
 static void console(void) {
 
     char *line = NULL;
@@ -135,16 +145,7 @@ static void console(void) {
     if (linelen == -1) exit(EXIT_FAILURE);
 
     char *cmd = strsep(&line, " \n");
-
-    static struct console_cmd cmds[] =
-       { { "setreg" , console_setreg  }
-       , { "getreg" , console_getreg  }
-       , { "setmem" , console_setmem  }
-       , { "getmem" , console_getmem  }
-       , { "trace"  , console_trace   }
-       , { "dumpmem", console_dumpmem }
-       , { NULL     , NULL            }
-       };
+    while (*line == ' ') line++;
 
     int i;
     for (i = 0; cmds[i].name; i++) {
@@ -231,7 +232,7 @@ static void load_program(const char *name) {
 
     FILE *pgm = fopen(name, "r");
     if (!pgm) {
-        perror("fopen");
+        perror("Failed opening program:");
         exit(EXIT_FAILURE);
     }
     fread(mem, sizeof(uint16_t), MEMSIZE, pgm);
