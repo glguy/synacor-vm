@@ -1,3 +1,6 @@
 /vm
 /challenge.bin
 .*.swp
+.stack-work
+stack.yaml
+dist
