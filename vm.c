@@ -13,9 +13,8 @@ static int input(void);
 static inline void output(char c);
 static void load_program(const char *name, void *mem, size_t n);
 static void render_mem(char *out, size_t n, uint16_t addr);
-static void trace_op(void);
+static void trace_op(uint16_t);
 
-static uint16_t pc;
 static uint16_t reg[8];
 static size_t   stack_size;
 static uint16_t *stack;
@@ -161,11 +160,12 @@ static void console(void) {
 
 static int input(void) {
     char c = getchar();
+    size_t len;
     switch (c) {
-        case EOF:            exit(EXIT_SUCCESS);
-        case '!': console(); return input();
-        case '#':            return input();
-        default:             return c;
+        case EOF:                      exit(EXIT_SUCCESS);
+        case '!': console();           return input();
+        case '#': fgetln(stdin, &len); return input();
+        default:                       return c;
     }
 }
 
@@ -179,7 +179,7 @@ static void render_mem(char *out, size_t n, uint16_t addr) {
     out[n-1] = '\0';
 }
 
-static void trace_op(void) {
+static void trace_op(uint16_t pc) {
 
     /* a jump table is unnecessary here, but I had one laying around... */
     static void *dispatch_table[] = {
@@ -262,21 +262,21 @@ int main(int argc, char *argv[]) {
 /* Look up value indicated by opcode argument.
  * Values beyond the address space indicate register names */
 static inline uint16_t arg(int x) {
-    const uint16_t v = mem[(pc+x) % MEMSIZE];
+    const uint16_t v = mem[x % MEMSIZE];
     return v & MEMSIZE ? reg[v & 0x7] : v;
 }
 
 static void vm(void) {
 
-    pc         = 0;
+    uint16_t pc = 0;
     stack_size = 0x8000; /* initial guess */
     stack      = malloc(stack_size * sizeof(uint16_t));
     sp         = stack;
 
     #define AR (reg[mem[pc+1] & 0x7])
-    #define A arg(1)
-    #define B arg(2)
-    #define C arg(3)
+    #define A arg(pc+1)
+    #define B arg(pc+2)
+    #define C arg(pc+3)
 
     static void *dispatch_table[] = {
         &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
@@ -286,7 +286,7 @@ static void vm(void) {
     };
 
     #define DISPATCH() \
-      do { if (__builtin_expect(tracing,false)) trace_op(); \
+      do { if (__builtin_expect(tracing,false)) trace_op(pc); \
            goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
          } while(false)
 
