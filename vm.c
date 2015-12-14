@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #define MEMSIZE 0x8000
@@ -11,7 +10,7 @@ static void push(uint16_t);
 static void vm(void);
 static int input(void);
 static inline void output(char c);
-static void load_program(const char *name, void *mem, size_t n);
+static void load_program(const char *name);
 static void render_mem(char *out, size_t n, uint16_t addr);
 static void trace_op(uint16_t);
 
@@ -112,14 +111,14 @@ static void console_trace(char *args) {
 static void console_dumpmem(char *args) {
 
     char *filename = strsep(&args," \n");
-    int fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+    FILE *dump = fopen(filename, "w");
 
-    if (fd == -1) {
-      perror("### open");
+    if (!dump) {
+        perror("### Error dumping memory");
     } else {
-      write(fd, mem, sizeof(mem));
-      close(fd);
-      printf("### Memory dumped to %s\n", args);
+        fwrite(mem, sizeof(uint16_t), MEMSIZE, dump);
+        fclose(dump);
+        printf("### Memory dumped to %s\n", filename);
     }
 }
 
@@ -228,26 +227,15 @@ static void trace_op(uint16_t pc) {
     BAD:  printf("%04hx: BAD\n",           pc         ); return;
 }
 
-static void load_program(const char *name, void *mem, size_t n) {
+static void load_program(const char *name) {
 
-    int pgm = open(name, O_RDONLY);
-    if (pgm == -1) {
-        perror("open");
+    FILE *pgm = fopen(name, "r");
+    if (!pgm) {
+        perror("fopen");
         exit(EXIT_FAILURE);
     }
-
-    ssize_t sz;
-    while ( (sz = read(pgm, mem, n)) > 0 ) {
-        mem += sz;
-        n   -= sz;
-    }
-
-    if (sz == -1) {
-        perror("read");
-        exit(EXIT_FAILURE);
-    }
-
-    close(pgm);
+    fread(mem, sizeof(uint16_t), MEMSIZE, pgm);
+    fclose(pgm);
 }
 
 int main(int argc, char *argv[]) {
@@ -257,7 +245,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    load_program(argv[1], &mem, sizeof(mem));
+    load_program(argv[1]);
     vm();
 
     return 0;
