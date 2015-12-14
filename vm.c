@@ -13,6 +13,7 @@ static inline void output(char c);
 static void load_program(const char *name);
 static void render_mem(char *out, size_t n, uint16_t addr);
 static void trace_op(uint16_t);
+static void console_help(char*);
 
 static uint16_t reg[8];
 static size_t   stack_size;
@@ -25,7 +26,7 @@ static uint16_t mem[MEMSIZE];
  * reallocates the stack to be twice as big in the case
  * that the stack was full. When reallocation fails the
  * program will terminate with failure. */
-static void push(uint16_t x) {
+static inline void push(uint16_t x) {
     if (__builtin_expect(sp == stack + stack_size,false)) {
         stack_size *= 2;
         stack = realloc(stack, stack_size * sizeof(uint16_t));
@@ -38,7 +39,7 @@ static inline uint16_t readmem(uint16_t addr) {
     return mem[addr % MEMSIZE];
 }
 
-static inline void output(char c) {
+static void output(char c) {
     if (!tracing) {
         putchar(c);
         if (c == '\n') fflush(stdout);
@@ -56,7 +57,7 @@ static void console_setreg(char *args) {
         reg[r] = val;
         printf("### Register %c set to %04hx\n", c, val);
     } else {
-        printf("### Error: setreg <A-H> <val>\n");
+        printf("### Usage: setreg [A-H] VALUE\n");
     }
 }
 
@@ -77,7 +78,7 @@ static void console_setmem(char *args) {
         mem[r] = val;
         printf("### Memory %04hx set to %04hx\n", r, val);
     } else {
-        printf("### Error: setmem <addr> <val>\n");
+        printf("### Usage: setmem ADDR VALUE\n");
     }
 }
 
@@ -89,7 +90,7 @@ static void console_getmem(char *args) {
     if (count == 1 && r < MEMSIZE) {
         printf("### Memory %04hx is %04hx\n", r, mem[r]);
     } else {
-        printf("### Error: getmem <addr>\n");
+        printf("### Usage: getmem ADDR\n");
     }
 }
 
@@ -104,7 +105,7 @@ static void console_trace(char *args) {
         printf("### Tracing disabled\n");
         tracing = false;
     } else {
-        printf("### !trace (on|off)\n");
+        printf("### Usage: trace [on|off]\n");
     }
 }
 
@@ -126,7 +127,7 @@ void console_break(char *args) {
 
     uint16_t addr;
     char *mode = strsep(&args, " \n");
-    int count = sscanf(args, "%hx", &addr);
+    int count = args ? sscanf(args, "%hx", &addr) : 0;
 
     if (!strcmp("set",mode) && count == 1 && addr < MEMSIZE) {
         uint16_t v = mem[addr];
@@ -147,7 +148,7 @@ void console_break(char *args) {
         }
 
     } else {
-        printf("### break [set|clear] ADDRESS\n");
+        printf("### Usage: break [set|clear] ADDR\n");
     }
 }
 
@@ -164,8 +165,18 @@ static struct console_cmd cmds[] =
     , { "trace"  , console_trace   }
     , { "dumpmem", console_dumpmem }
     , { "break"  , console_break   }
+    , { "help"   , console_help    }
     , { NULL     , NULL            }
     };
+
+static void console_help(char *args) {
+    printf("### Commands:");
+    for (int i = 0; cmds[i].name; i++) {
+        printf(" %s", cmds[i].name);
+    }
+    printf("\n");
+}
+
 
 static void console(void) {
 
@@ -175,7 +186,7 @@ static void console(void) {
     if (linelen == -1) exit(EXIT_FAILURE);
 
     char *cmd = strsep(&line, " \n");
-    while (*line == ' ') line++;
+    while (*line == ' ') line++; /* drop whitespace */
 
     int i;
     for (i = 0; cmds[i].name; i++) {
@@ -270,14 +281,32 @@ static void load_program(const char *name) {
     fclose(pgm);
 }
 
+void usage(void) {
+    fprintf(stderr, "Usage: vm [-d] challenge.bin\n");
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char *argv[]) {
 
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s challenge.bin\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
+    bool dflag = false;
+    int ch;
 
-    load_program(argv[1]);
+    while ((ch = getopt(argc, argv, "d")) != -1) {
+        switch(ch) {
+            case 'd': dflag = true; break;
+            case '?': usage();
+            default: usage();
+        }
+    }
+    argc -= optind;
+    argv += optind;
+
+    if (argc < 1) usage();
+
+    load_program(argv[0]);
+
+    if (dflag) { mem[0] = (mem[0] << 8) | 0x1f; }
+
     vm();
 
     return 0;
@@ -341,5 +370,8 @@ static void vm(void) {
                                   pc = *--sp;             DISPATCH();
     HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
     BAD:  exit(EXIT_FAILURE);
-    BREAK: printf("### Breakpoint at %04hx\n", pc); console(); DISPATCH();
+    BREAK:
+        printf("### Breakpoint at %04hx\n!", pc);
+        console();
+        DISPATCH();
 }
