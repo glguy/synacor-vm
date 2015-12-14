@@ -9,27 +9,22 @@ import Data.Monoid
 import Text.Parsec
 import Data.Map (Map)
 import Data.Char (ord)
+import Data.Bits
 import Data.Foldable
 import qualified Data.Map as Map
-import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
 import Control.Monad
-import Text.Parsec.Prim
-import qualified Tokens as T
-import Lexer
 import Data.Functor.Identity
 
 data AsmPart = Instruction Instruction
-             | FileLabel Text
-             | Literal Int
-             | String Text
+             | FileLabel String
+             | Literal Val
+             | String String
   deriving (Show, Read)
 
 data Reg = A | B | C | D | E | F | G | H
   deriving (Show, Read, Enum, Bounded)
 
-data Val = Number Int | Reg Reg | Label Text
+data Val = Number Integer | Reg Reg | Label String | Char Char
   deriving (Show, Read)
 
 data Instruction
@@ -90,9 +85,9 @@ instance Size AsmPart where
     Instruction i -> size i
     FileLabel  {} -> 0
     Literal    {} -> 1
-    String txt    -> Text.length txt + 1
+    String txt    -> length txt
 
-resolveLabels :: [AsmPart] -> Map Text Int
+resolveLabels :: [AsmPart] -> Map String Int
 resolveLabels = snd . foldl' aux (0, Map.empty)
   where
   aux (!pos, !acc) x = (pos + size x, acc')
@@ -104,7 +99,7 @@ resolveLabels = snd . foldl' aux (0, Map.empty)
              _ -> acc
 
 
-buildInstruction :: Map Text Int -> Instruction -> Builder
+buildInstruction :: Map String Int -> Instruction -> Builder
 buildInstruction labs = \case
   Halt       -> word16LE  0
   Set a b    -> word16LE  1 <> buildReg a <> buildVal labs b
@@ -132,20 +127,21 @@ buildInstruction labs = \case
 buildReg :: Reg -> Builder
 buildReg r = word16LE (0x8000 + fromIntegral (fromEnum r))
 
-buildVal :: Map Text Int -> Val -> Builder
+buildVal :: Map String Int -> Val -> Builder
 buildVal labs = \case
-  Number n -> word16LE (fromIntegral n)
+  Number n -> word16LE (fromIntegral n .&. 0x7fff)
+  Char c   -> word16LE (fromIntegral (ord c) .&. 0x7fff)
   Reg    r -> buildReg r
   Label  t -> case Map.lookup t labs of
                 Just n -> word16LE (fromIntegral n)
                 Nothing -> error ("Bad label: " ++ show t)
 
-buildPart :: Map Text Int -> AsmPart -> Builder
+buildPart :: Map String Int -> AsmPart -> Builder
 buildPart labs = \case
   Instruction i -> buildInstruction labs i
   FileLabel {}  -> mempty
-  Literal n     -> word16LE (fromIntegral n)
-  String txt    -> foldMap (word16LE . fromIntegral . ord) (Text.unpack txt)
+  Literal v     -> buildVal labs v
+  String txt    -> foldMap (word16LE . fromIntegral . ord) txt
 
 assemble :: [AsmPart] -> ByteString
 assemble xs = toLazyByteString (foldMap (buildPart labs) xs)

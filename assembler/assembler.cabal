@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Lexer, LexerUtils, Tokens, Assembly, Parser
+  exposed-modules:     Assembly, Parser
 
   hs-source-dirs:      src
   build-tools:         alex

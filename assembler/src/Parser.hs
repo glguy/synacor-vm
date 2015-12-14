@@ -13,105 +13,84 @@ import Data.Map (Map)
 import Data.Char (ord)
 import Data.Foldable
 import qualified Data.Map as Map
-import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
 import Control.Monad
-import Text.Parsec.Prim
-import qualified Tokens as T
-import Lexer
 import Data.Functor.Identity
+import Text.Parsec.Language
+import Text.Parsec.Token
 
-type Parser = ParsecT [T.Located T.Token] () Identity
+type Parser = ParsecT String () Identity
 
-mktoken :: (T.Token -> Maybe a) -> Parser a
-mktoken f = tokenPrim (show . T.locThing) (\p t _ -> asSourcePos (T.locPosition t) p) (f . T.locThing)
+myLanguageDef :: LanguageDef st
+myLanguageDef = emptyDef
+  { commentLine   = "#"
+  , reservedNames = ["HALT", "SET" , "PUSH", "POP", "EQ" , "GT"  , "JMP", "JT"  ,
+                     "JF"  , "ADD" , "MULT", "MOD", "AND", "OR"  , "NOT", "RMEM",
+                     "WMEM", "CALL", "RET" , "OUT", "IN" , "NOOP",
+                     "A", "B", "C", "D", "E", "F", "G", "H"]
+  }
+
+tp :: TokenParser st
+tp = makeTokenParser myLanguageDef
 
 instr :: Parser Instruction
 instr = choice
-  [ Halt <$ match T.Halt
-  , Set  <$ match T.Set  <*> reg <*> val
-  , Push <$ match T.Push <*> val
-  , Pop  <$ match T.Pop  <*> reg
-  , Eq   <$ match T.Eq   <*> reg <*> val <*> val
-  , Gt   <$ match T.Gt   <*> reg <*> val <*> val
-  , Jmp  <$ match T.Jmp  <*> val
-  , Jt   <$ match T.Jt   <*> val <*> val
-  , Jf   <$ match T.Jf   <*> val <*> val
-  , Add  <$ match T.Add  <*> reg <*> val <*> val
-  , Mult <$ match T.Mult <*> reg <*> val <*> val
-  , Mod  <$ match T.Mod  <*> reg <*> val <*> val
-  , And  <$ match T.And  <*> reg <*> val <*> val
-  , Or   <$ match T.Or   <*> reg <*> val <*> val
-  , Not  <$ match T.Not  <*> reg <*> val
-  , Rmem <$ match T.Rmem <*> reg <*> val
-  , Wmem <$ match T.Wmem <*> val <*> val
-  , Call <$ match T.Call <*> val
-  , Ret  <$ match T.Ret
-  , Out  <$ match T.Out  <*> val
-  , In   <$ match T.In   <*> reg
-  , Noop <$ match T.Noop
+  [ Halt <$ reserved tp "HALT"
+  , Set  <$ reserved tp "SET"  <*> reg <*> val
+  , Push <$ reserved tp "PUSH" <*> val
+  , Pop  <$ reserved tp "POP"  <*> reg
+  , Eq   <$ reserved tp "EQ"   <*> reg <*> val <*> val
+  , Gt   <$ reserved tp "GT"   <*> reg <*> val <*> val
+  , Jmp  <$ reserved tp "JMP"  <*> val
+  , Jt   <$ reserved tp "JT"   <*> val <*> val
+  , Jf   <$ reserved tp "JF"   <*> val <*> val
+  , Add  <$ reserved tp "ADD"  <*> reg <*> val <*> val
+  , Mult <$ reserved tp "MULT" <*> reg <*> val <*> val
+  , Mod  <$ reserved tp "MOD"  <*> reg <*> val <*> val
+  , And  <$ reserved tp "AND"  <*> reg <*> val <*> val
+  , Or   <$ reserved tp "OR"   <*> reg <*> val <*> val
+  , Not  <$ reserved tp "NOT"  <*> reg <*> val
+  , Rmem <$ reserved tp "RMEM" <*> reg <*> val
+  , Wmem <$ reserved tp "WMEM" <*> val <*> val
+  , Call <$ reserved tp "CALL" <*> val
+  , Ret  <$ reserved tp "RET"
+  , Out  <$ reserved tp "OUT"  <*> val
+  , In   <$ reserved tp "IN"   <*> reg
+  , Noop <$ reserved tp "NOOP"
   ]
 
 val :: Parser Val
-val = choice [ Number <$> number
-             , Label  <$> labelVal
+val = choice [ Number <$> integer tp
+             , Char   <$> charLiteral tp
+             , Label  <$> identifier tp
              , Reg    <$> reg
              ]
 
 reg :: Parser Reg
-reg = mktoken $ \case
-  T.A -> Just A
-  T.B -> Just B
-  T.C -> Just C
-  T.D -> Just D
-  T.E -> Just E
-  T.F -> Just F
-  T.G -> Just G
-  T.H -> Just H
-  _   -> Nothing
-
-labelVal :: Parser Text
-labelVal = mktoken $ \case
-  T.Label l -> Just l
-  _         -> Nothing
-
-number :: Parser Int
-number = mktoken $ \case
-  T.Number n -> Just n
-  _          -> Nothing
-
-stringlit :: Parser Text
-stringlit = mktoken $ \case
-  T.String s -> Just s
-  _          -> Nothing
-
-match :: T.Token -> Parser ()
-match tok = mktoken $ \t -> guard (tok==t)
-
-endOfFile :: Parser ()
-endOfFile = match T.EOF
-
-colon :: Parser ()
-colon = match T.Colon
+reg = choice
+  [ A <$ reserved tp "A"
+  , B <$ reserved tp "B"
+  , C <$ reserved tp "C"
+  , D <$ reserved tp "D"
+  , E <$ reserved tp "E"
+  , F <$ reserved tp "F"
+  , G <$ reserved tp "G"
+  , H <$ reserved tp "H"
+  ]
 
 asmpart :: Parser AsmPart
 asmpart = choice
   [ Instruction <$> instr
-  , FileLabel   <$> labelVal <* colon
-  , Literal     <$> number
-  , String      <$> stringlit
+  , FileLabel   <$> identifier tp <* colon tp
+  , Literal     <$> val
+  , String      <$> stringLiteral tp
   ]
 
 asmfile :: Parser [AsmPart]
-asmfile = many asmpart <* endOfFile
-
-asSourcePos :: T.Position -> SourcePos -> SourcePos
-asSourcePos tpos pos = setSourceColumn (setSourceLine pos (T.posLine tpos)) (T.posColumn tpos)
+asmfile = whiteSpace tp *> many asmpart <* eof
 
 parseFile :: FilePath -> IO [AsmPart]
 parseFile fp =
-  do txt <- Text.readFile fp
-     case parse asmfile fp (scanTokens txt) of
+  do txt <- readFile fp
+     case parse asmfile fp txt of
        Left e -> fail (show e)
        Right xs -> return xs
