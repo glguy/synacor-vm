@@ -122,6 +122,35 @@ static void console_dumpmem(char *args) {
     }
 }
 
+void console_break(char *args) {
+
+    uint16_t addr;
+    char *mode = strsep(&args, " \n");
+    int count = sscanf(args, "%hx", &addr);
+
+    if (!strcmp("set",mode) && count == 1 && addr < MEMSIZE) {
+        uint16_t v = mem[addr];
+        if ((v & 0x1f) == 0x1f) {
+            printf("### Breakpoint already set\n");
+        } else {
+            mem[addr] = (v << 8) | 0x1f;
+            printf("### Breakpoint set\n");
+        }
+
+    } else if (!strcmp("clear",mode) && count == 1 && addr < MEMSIZE) {
+        uint16_t v = mem[addr];
+        if ((v & 0x1f) == 0x1f) {
+            mem[addr] = v >> 8;
+            printf("### Breakpoint cleared\n");
+        } else {
+            printf("### No breakpoint at this address\n");
+        }
+
+    } else {
+        printf("### break [set|clear] ADDRESS\n");
+    }
+}
+
 struct console_cmd {
     const char *name;
     void (*run)(char *);
@@ -134,6 +163,7 @@ static struct console_cmd cmds[] =
     , { "getmem" , console_getmem  }
     , { "trace"  , console_trace   }
     , { "dumpmem", console_dumpmem }
+    , { "break"  , console_break   }
     , { NULL     , NULL            }
     };
 
@@ -176,7 +206,7 @@ static int input(void) {
 static void render_mem(char *out, size_t n, uint16_t addr) {
     uint16_t val = readmem(addr);
     if (val & MEMSIZE) {
-        snprintf(out, n, "%c", 'A'+ val&7);
+        snprintf(out, n, "%c", 'A' + (val&7));
     } else {
         snprintf(out, n, "%04hx", val);
     }
@@ -190,7 +220,7 @@ static void trace_op(uint16_t pc) {
         &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
         &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
         &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
-        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
+        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BREAK
     };
 
     char a[7], b[7], c[7];
@@ -226,6 +256,7 @@ static void trace_op(uint16_t pc) {
 
     HALT: printf("%04hx: HALT\n",          pc         ); return;
     BAD:  printf("%04hx: BAD\n",           pc         ); return;
+    BREAK:                                               return;
 }
 
 static void load_program(const char *name) {
@@ -275,7 +306,7 @@ static void vm(void) {
         &&HALT, &&SET,  &&PUSH, &&POP, &&EQ,  &&GT,   &&JMP, &&JT,
         &&JF,   &&ADD,  &&MULT, &&MOD, &&AND, &&OR,   &&NOT, &&RMEM,
         &&WMEM, &&CALL, &&RET,  &&OUT, &&IN,  &&NOOP, &&BAD, &&BAD,
-        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BAD
+        &&BAD,  &&BAD,  &&BAD,  &&BAD, &&BAD, &&BAD,  &&BAD, &&BREAK
     };
 
     #define DISPATCH() \
@@ -310,4 +341,5 @@ static void vm(void) {
                                   pc = *--sp;             DISPATCH();
     HALT: free(stack); sp = stack = NULL; stack_size = 0; return;
     BAD:  exit(EXIT_FAILURE);
+    BREAK: printf("### Breakpoint at %04hx\n", pc); console(); DISPATCH();
 }
