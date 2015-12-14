@@ -35,6 +35,10 @@ static void push(uint16_t x) {
     *sp++ = x;
 }
 
+static inline uint16_t readmem(uint16_t addr) {
+    return mem[addr % MEMSIZE];
+}
+
 static inline void output(char c) {
     if (!tracing) {
         putchar(c);
@@ -170,7 +174,7 @@ static int input(void) {
 }
 
 static void render_mem(char *out, size_t n, uint16_t addr) {
-    uint16_t val = mem[addr % MEMSIZE];
+    uint16_t val = readmem(addr);
     if (val & MEMSIZE) {
         snprintf(out, n, "%c", 'A'+ val&7);
     } else {
@@ -194,7 +198,7 @@ static void trace_op(uint16_t pc) {
     render_mem(b,sizeof(b),pc+2);
     render_mem(c,sizeof(c),pc+3);
 
-    goto *dispatch_table[mem[pc] & 0x1f];
+    goto *dispatch_table[readmem(pc) & 0x1f];
     SET:  printf("%04hx: %s = %s\n",       pc, a, b   ); return;
     EQ:   printf("%04hx: %s = %s == %s\n", pc, a, b, c); return;
     GT:   printf("%04hx: %s = %s > %s\n",  pc, a, b, c); return;
@@ -262,7 +266,7 @@ int main(int argc, char *argv[]) {
 /* Look up value indicated by opcode argument.
  * Values beyond the address space indicate register names */
 static inline uint16_t arg(int x) {
-    const uint16_t v = mem[x % MEMSIZE];
+    const uint16_t v = readmem(x);
     return v & MEMSIZE ? reg[v & 0x7] : v;
 }
 
@@ -273,7 +277,7 @@ static void vm(void) {
     stack      = malloc(stack_size * sizeof(uint16_t));
     sp         = stack;
 
-    #define AR (reg[mem[pc+1] & 0x7])
+    #define AR (reg[readmem(pc+1) & 0x7])
     #define A arg(pc+1)
     #define B arg(pc+2)
     #define C arg(pc+3)
@@ -287,7 +291,7 @@ static void vm(void) {
 
     #define DISPATCH() \
       do { if (__builtin_expect(tracing,false)) trace_op(pc); \
-           goto *dispatch_table[mem[pc % MEMSIZE] & 0x1f]; \
+           goto *dispatch_table[readmem(pc) & 0x1f]; \
          } while(false)
 
     DISPATCH();
@@ -304,8 +308,8 @@ static void vm(void) {
     AND:  AR = B & C;             pc += 4;                DISPATCH();
     OR:   AR = B | C;             pc += 4;                DISPATCH();
     NOT:  AR = B ^ 0x7fff;        pc += 3;                DISPATCH();
-    RMEM: AR = mem[B];            pc += 3;                DISPATCH();
-    WMEM: mem[A] = B;             pc += 3;                DISPATCH();
+    RMEM: AR = readmem(B);        pc += 3;                DISPATCH();
+    WMEM: mem[A % MEMSIZE] = B;   pc += 3;                DISPATCH();
     OUT:  output(A);              pc += 2;                DISPATCH();
     IN:   AR = input();           pc += 2;                DISPATCH();
     NOOP:                         pc += 1;                DISPATCH();
