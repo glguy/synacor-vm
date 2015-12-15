@@ -256,7 +256,13 @@ static void trace_op(uint16_t pc) {
     JT:   printf("%04hx: JT [%s] %s\n",    pc, a, b   ); return;
     JF:   printf("%04hx: JF [%s] %s\n",    pc, a, b   ); return;
 
-    OUT:  printf("%04hx: OUTPUT %s\n",     pc, a      ); return;
+    OUT:  { uint16_t v = readmem(pc+1);
+            if (0x20 <= v && v < 0x80)
+                printf("%04hx: OUTPUT '%c'\n", pc, (char)v);
+            else
+                printf("%04hx: OUTPUT %s\n", pc, a);
+            return;
+          }
     IN:   printf("%04hx: INPUT %s\n",      pc, a      ); return;
 
     NOOP: printf("%04hx: NOP\n",           pc         ); return;
@@ -282,7 +288,10 @@ static void load_program(const char *name) {
 }
 
 void usage(void) {
-    fprintf(stderr, "Usage: vm [-d] challenge.bin\n");
+    fprintf(stderr, "Usage: vm [options] IMAGE\n"
+                    "Available options are:\n"
+                    "  -d       Set breakpoint at startup\n"
+                    "  -t       Start with trace enabled\n");
     exit(EXIT_FAILURE);
 }
 
@@ -291,9 +300,10 @@ int main(int argc, char *argv[]) {
     bool dflag = false;
     int ch;
 
-    while ((ch = getopt(argc, argv, "d")) != -1) {
+    while ((ch = getopt(argc, argv, "dt")) != -1) {
         switch(ch) {
-            case 'd': dflag = true; break;
+            case 'd': dflag   = true; break;
+            case 't': tracing = true; break;
             case '?': usage();
             default: usage();
         }
