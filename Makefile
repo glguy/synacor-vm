@@ -9,6 +9,8 @@ scripted: vm
 
 vm: vm.c
 	clang -g -O3 $^ -o $@
+vmfast: vmfast.c
+	clang -g -O3 $^ -o $@
 teleport: teleport.c
 	clang -g -O3 $^ -o $@
 coins:
