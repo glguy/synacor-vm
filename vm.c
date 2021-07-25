@@ -7,8 +7,8 @@
 #define MEMSIZE 0x8000
 
 static void push(uint16_t);
-static void vm(void);
-static int input(void);
+static void vm(bool);
+static int input(bool);
 static inline void output(char c);
 static void load_program(const char *name);
 static void render_mem(char *out, size_t n, uint16_t addr);
@@ -203,14 +203,14 @@ static void console(void) {
     free(cmd);
 }
 
-static int input(void) {
+static int input(bool echo) {
     char c = getchar();
     size_t len;
     switch (c) {
         case EOF:                      exit(EXIT_SUCCESS);
-        case '!': console();           return input();
-        case '#': fgetln(stdin, &len); return input();
-        default:                       return c;
+        case '!': console();           return input(echo);
+        case '#': fgetln(stdin, &len); return input(echo);
+        default:                       if (echo) {putchar(c);} return c;
     }
 }
 
@@ -291,6 +291,7 @@ void usage(void) {
     fprintf(stderr, "Usage: vm [options] IMAGE\n"
                     "Available options are:\n"
                     "  -d       Set breakpoint at startup\n"
+                    "  -e       Echo inputs\n"
                     "  -t       Start with trace enabled\n");
     exit(EXIT_FAILURE);
 }
@@ -298,11 +299,13 @@ void usage(void) {
 int main(int argc, char *argv[]) {
 
     bool dflag = false;
+    bool eflag = false;
     int ch;
 
-    while ((ch = getopt(argc, argv, "dt")) != -1) {
+    while ((ch = getopt(argc, argv, "det")) != -1) {
         switch(ch) {
             case 'd': dflag   = true; break;
+            case 'e': eflag   = true; break;
             case 't': tracing = true; break;
             case '?': usage();
             default: usage();
@@ -317,7 +320,7 @@ int main(int argc, char *argv[]) {
 
     if (dflag) { mem[0] = (mem[0] << 8) | 0x1f; }
 
-    vm();
+    vm(eflag);
 
     return 0;
 }
@@ -329,7 +332,7 @@ static inline uint16_t arg(int x) {
     return v & MEMSIZE ? reg[v & 0x7] : v;
 }
 
-static void vm(void) {
+static void vm(bool echo) {
 
     uint16_t pc = 0;
     stack_size = 0x8000; /* initial guess */
@@ -370,7 +373,7 @@ static void vm(void) {
     RMEM: AR = readmem(B);        pc += 3;                DISPATCH();
     WMEM: mem[A % MEMSIZE] = B;   pc += 3;                DISPATCH();
     OUT:  output(A);              pc += 2;                DISPATCH();
-    IN:   AR = input();           pc += 2;                DISPATCH();
+    IN:   AR = input(echo);       pc += 2;                DISPATCH();
     NOOP:                         pc += 1;                DISPATCH();
     PUSH: push(A);                pc += 2;                DISPATCH();
     POP:  if (__builtin_expect(sp == stack,false)) exit(EXIT_FAILURE);
